@@ -18,6 +18,7 @@ import org.omegazero.common.logging.Logger;
 import org.omegazero.net.socket.SocketConnection;
 import org.omegazero.proxy.http.HTTPMessage;
 import org.omegazero.proxy.http.HTTPMessageData;
+import org.omegazero.proxy.http.HTTPMessageTrailers;
 import org.omegazero.proxy.http.HTTPValidator;
 import org.omegazero.proxy.http2.core.HTTP2Message;
 import org.omegazero.proxy.http2.core.HTTP2Settings;
@@ -59,7 +60,7 @@ public class MessageStream extends HTTP2Stream {
 	private StreamCallback<HTTP2Message> onPushPromise;
 	private StreamCallback<HTTPMessageData> onMessage;
 	private StreamCallback<HTTPMessageData> onData;
-	private StreamCallback<Map<String, String>> onTrailers;
+	private StreamCallback<HTTPMessageTrailers> onTrailers;
 	private Runnable onDataFlushed;
 	private Consumer<Integer> onClosed;
 
@@ -116,6 +117,25 @@ public class MessageStream extends HTTP2Stream {
 		this.writeMessage(FRAME_TYPE_HEADERS, null, message, endStream);
 	}
 
+	/**
+	 * Sends the given <b>trailers</b> on this stream by encoding the data with the configured {@link HPackContext} and sending it in one <i>HEADERS</i> and zero or more
+	 * <i>CONTINUATION</i> frames.
+	 * 
+	 * @param trailers The trailers to send
+	 * @throws IllegalStateException If the stream is not in <code>STATE_OPEN</code> or <code>STATE_HALF_CLOSED</code>
+	 */
+	public synchronized void sendTrailers(HTTPMessageTrailers htrailers) {
+		if(this.state != STATE_OPEN && this.state != STATE_HALF_CLOSED)
+			throw new IllegalStateException("Stream is not expecting trailers");
+
+		java.util.Set<Map.Entry<String, String>> trailers = htrailers.getHeaderSet();
+		HPackContext.EncoderContext context = new HPackContext.EncoderContext(trailers.size());
+		for(Map.Entry<String, String> header : trailers){
+			this.hpack.encodeHeader(context, header.getKey().toLowerCase(), header.getValue());
+		}
+		this.writeHeaders(FRAME_TYPE_HEADERS, context, true);
+	}
+
 	private void writeMessage(int type, byte[] prependData, HTTPMessage message, boolean endStream) {
 		java.util.Set<Map.Entry<String, String>> headers = message.getHeaderSet();
 		HPackContext.EncoderContext context = new HPackContext.EncoderContext(headers.size(), prependData);
@@ -131,6 +151,10 @@ public class MessageStream extends HTTP2Stream {
 			this.hpack.encodeHeader(context, header.getKey().toLowerCase(), header.getValue());
 		}
 
+		this.writeHeaders(type, context, endStream);
+	}
+
+	private void writeHeaders(int type, HPackContext.EncoderContext context, boolean endStream) {
 		int maxFrameSize = this.remoteSettings.get(SETTINGS_MAX_FRAME_SIZE);
 		int index = 0;
 		byte[] data = context.getEncodedData();
@@ -224,11 +248,11 @@ public class MessageStream extends HTTP2Stream {
 		if(type == FRAME_TYPE_PRIORITY){
 			// currently unsupported
 		}else if(type == FRAME_TYPE_HEADERS){
-			if(this.state == STATE_IDLE)
+			if(this.state == STATE_IDLE) // incoming request (c->s)
 				this.state = STATE_OPEN;
-			else if(this.state == STATE_RESERVED)
+			else if(this.state == STATE_RESERVED) // incoming response after push promise (s->c)
 				this.state = STATE_HALF_CLOSED_LOCAL;
-			else if(this.state != STATE_HALF_CLOSED_LOCAL)
+			else if(this.state != STATE_HALF_CLOSED_LOCAL && this.state != STATE_OPEN) // incoming response (s->c) or incoming request trailers (c->s)
 				throw new HTTP2ConnectionError(STATUS_PROTOCOL_ERROR, true);
 			if(data.length < 1)
 				throw new HTTP2ConnectionError(STATUS_FRAME_SIZE_ERROR);
@@ -364,7 +388,7 @@ public class MessageStream extends HTTP2Stream {
 			if(!endStream)
 				throw new HTTP2ConnectionError(STATUS_PROTOCOL_ERROR, true);
 			if(this.onTrailers != null)
-				this.onTrailers.accept(headers);
+				this.onTrailers.accept(new HTTPMessageTrailers(this.receivedMessage, headers));
 			else if(this.onData != null)
 				this.onData.accept(new HTTPMessageData(this.receivedMessage, true, new byte[0]));
 		}
@@ -474,7 +498,7 @@ public class MessageStream extends HTTP2Stream {
 		this.onData = onData;
 	}
 
-	public void setOnTrailers(StreamCallback<Map<String, String>> onTrailers) {
+	public void setOnTrailers(StreamCallback<HTTPMessageTrailers> onTrailers) {
 		this.onTrailers = onTrailers;
 	}
 

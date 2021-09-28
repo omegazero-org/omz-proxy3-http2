@@ -329,6 +329,20 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 					HTTP2.this.respondError(request, HTTPCommon.STATUS_INTERNAL_SERVER_ERROR, "Internal Server Error", "An unexpected error has occurred");
 				}
 			});
+			clientStream.setOnTrailers((trailers) -> {
+				if(usStream.isClosed())
+					throw new HTTP2ConnectionError(HTTP2Constants.STATUS_CANCEL, true);
+				try{
+					HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_REQUEST_TRAILERS, HTTP2.super.connection, trailers, userver);
+					HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_REQUEST_ENDED, HTTP2.super.connection, request, userver); // trailers always imply EOS
+					usStream.sendTrailers(trailers);
+				}catch(Exception e){
+					if(e instanceof HTTP2ConnectionError)
+						throw e;
+					logger.error("Error while processing request trailers: ", e);
+				}
+			});
+
 			usStream.setOnDataFlushed(() -> {
 				clientStream.setReceiveData(true);
 			});
@@ -379,6 +393,13 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 			HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_RESPONSE_DATA, HTTP2.super.connection, usStream.getConnection(), responsedata, userver);
 			if(!dsStream.sendData(responsedata.getData(), responsedata.isLastPacket()))
 				usStream.setReceiveData(false);
+		});
+		usStream.setOnTrailers((trailers) -> {
+			if(dsStream.isClosed())
+				throw new HTTP2ConnectionError(HTTP2Constants.STATUS_CANCEL, true);
+			HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_RESPONSE_TRAILERS, HTTP2.super.connection, usStream.getConnection(), trailers, userver);
+			HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_RESPONSE_ENDED, HTTP2.super.connection, usStream.getConnection(), trailers.getHttpMessage(), userver);
+			dsStream.sendTrailers(trailers);
 		});
 		usStream.setOnClosed((status) -> {
 			if(HTTP2.this.downstreamClosed)
@@ -431,7 +452,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 		});
 		uconn.setOnError((e) -> {
 			if(e instanceof IOException)
-				logger.error(uconn.getAttachment(), " Error: ", NetCommon.isPrintStackTraces() ? e : e.toString());
+				logger.error(uconn.getAttachment(), " Error: ", NetCommon.PRINT_STACK_TRACES ? e : e.toString());
 			else
 				logger.error(uconn.getAttachment(), " Internal error: ", e);
 
