@@ -79,7 +79,7 @@ public class HTTP2Client extends HTTP2Endpoint {
 	public void connectionClosed() {
 		for(HTTP2Stream s : super.streams.values()){
 			if(s instanceof MessageStream)
-				((MessageStream) s).rst(0);
+				((MessageStream) s).rst(HTTP2Constants.STATUS_CANCEL);
 		}
 	}
 
