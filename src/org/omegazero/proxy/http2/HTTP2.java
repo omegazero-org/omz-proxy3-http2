@@ -398,7 +398,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 			if(dsStream.isClosed())
 				throw new HTTP2ConnectionError(HTTP2Constants.STATUS_CANCEL, true);
 			HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_RESPONSE_TRAILERS, HTTP2.super.connection, usStream.getConnection(), trailers, userver);
-			HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_RESPONSE_ENDED, HTTP2.super.connection, usStream.getConnection(), trailers.getHttpMessage(), userver);
+			// HTTP_RESPONSE_ENDED event is already run in onClosed below because the response stream is complete and closes immediately after receiving trailers
 			dsStream.sendTrailers(trailers);
 		});
 		usStream.setOnClosed((status) -> {
