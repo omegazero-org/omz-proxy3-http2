@@ -410,7 +410,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 				if(status == HTTP2Constants.STATUS_ENHANCE_YOUR_CALM || status == HTTP2Constants.STATUS_HTTP_1_1_REQUIRED){ // passthrough error to client
 					dsStream.rst(status);
 				}else if(dsStream.isExpectingResponse()){
-					logger.error(usStream.getConnection().getAttachment(), " Stream ", usStream.getStreamId(), " closed unexpectedly with status ", status);
+					logUNetError(usStream.getConnection().getAttachment(), " Stream ", usStream.getStreamId(), " closed unexpectedly with status ", status);
 					HTTP2.this.respondError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", "Message stream closed unexpectedly");
 				}
 			}else if(status == 0)
@@ -444,7 +444,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 			HTTP2.this.proxy.dispatchEvent(ProxyEvents.UPSTREAM_CONNECTION, uconn);
 		});
 		uconn.setOnTimeout(() -> {
-			logger.error(uconn.getAttachment(), " Connect timed out");
+			logUNetError(uconn.getAttachment(), " Connect timed out");
 			HTTP2.this.proxy.dispatchEvent(ProxyEvents.UPSTREAM_CONNECTION_TIMEOUT, uconn);
 			if(HTTP2.this.downstreamClosed)
 				return;
@@ -452,7 +452,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 		});
 		uconn.setOnError((e) -> {
 			if(e instanceof IOException)
-				logger.error(uconn.getAttachment(), " Error: ", NetCommon.PRINT_STACK_TRACES ? e : e.toString());
+				logUNetError(uconn.getAttachment(), " Error: ", NetCommon.PRINT_STACK_TRACES ? e : e.toString());
 			else
 				logger.error(uconn.getAttachment(), " Internal error: ", e);
 
@@ -496,5 +496,12 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 				return false;
 		}
 		return true;
+	}
+
+	private static void logUNetError(Object... o) {
+		if(HTTPCommon.USOCKET_ERROR_DEBUG)
+			logger.debug(o);
+		else
+			logger.warn(o);
 	}
 }
