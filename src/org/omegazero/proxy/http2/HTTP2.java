@@ -170,6 +170,14 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 		this.respondEx(request, status, errdocData, headers, "content-type", errdoc.getMimeType());
 	}
 
+	private void respondUNetError(HTTPMessage request, int status, String title, String message, SocketConnection uconn, UpstreamServer userver) {
+		if(request.hasResponse())
+			return;
+		this.proxy.dispatchEvent(ProxyEvents.HTTP_FORWARD_FAILED, super.connection, uconn, request, userver);
+		if(!request.hasResponse())
+			this.respondError(request, status, title, message);
+	}
+
 	private void respondEx(HTTPMessage request, int status, byte[] data, String[] h1, String... hEx) {
 		if(request.getCorrespondingMessage() != null)
 			return;
@@ -411,7 +419,8 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 					dsStream.rst(status);
 				}else if(dsStream.isExpectingResponse()){
 					logUNetError(usStream.getConnection().getAttachment(), " Stream ", usStream.getStreamId(), " closed unexpectedly with status ", status);
-					HTTP2.this.respondError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", "Message stream closed unexpectedly");
+					HTTP2.this.respondUNetError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", "Message stream closed unexpectedly", usStream.getConnection(),
+							userver);
 				}
 			}else if(status == 0)
 				HTTP2.this.proxy.dispatchEvent(ProxyEvents.HTTP_RESPONSE_ENDED, HTTP2.super.connection, usStream.getConnection(), response, userver);
@@ -448,7 +457,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 			HTTP2.this.proxy.dispatchEvent(ProxyEvents.UPSTREAM_CONNECTION_TIMEOUT, uconn);
 			if(HTTP2.this.downstreamClosed)
 				return;
-			HTTP2.this.respondError(request, HTTPCommon.STATUS_GATEWAY_TIMEOUT, "Gateway Timeout", "Connection to the upstream server timed out");
+			HTTP2.this.respondUNetError(request, HTTPCommon.STATUS_GATEWAY_TIMEOUT, "Gateway Timeout", "Connection to the upstream server timed out", uconn, userver);
 		});
 		uconn.setOnError((e) -> {
 			if(e instanceof IOException)
@@ -462,9 +471,9 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 				if(HTTP2.this.downstreamClosed)
 					return;
 				if(e instanceof HTTP2ConnectionError)
-					this.respondError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", "HTTP/2 protocol error");
+					this.respondUNetError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", "HTTP/2 protocol error", uconn, userver);
 				else if(e instanceof IOException)
-					this.respondError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", HTTPCommon.getUpstreamErrorMessage(e));
+					this.respondUNetError(request, HTTPCommon.STATUS_BAD_GATEWAY, "Bad Gateway", HTTPCommon.getUpstreamErrorMessage(e), uconn, userver);
 				else
 					this.respondError(request, HTTPCommon.STATUS_INTERNAL_SERVER_ERROR, "Internal Server Error",
 							"An internal error occurred in the connection to the upstream server");
