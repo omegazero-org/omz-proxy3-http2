@@ -50,6 +50,8 @@ public abstract class HTTP2Endpoint {
 		this.hpack = hpack;
 
 		this.frameBuffer = new byte[settings.get(HTTP2Constants.SETTINGS_MAX_FRAME_SIZE) + HTTP2Constants.FRAME_HEADER_SIZE];
+
+		this.connection.setOnWritable(this::handleConnectionWindowUpdate);
 	}
 
 
@@ -133,7 +135,7 @@ public abstract class HTTP2Endpoint {
 				HTTP2ConnectionError h2e = (HTTP2ConnectionError) e;
 				if(logger.debug())
 					logger.debug(this.connection.getRemoteAddress(), " HTTP2 ", h2e.isStreamError() ? "stream" : "connection", " error in stream ",
-							(stream != null ? stream.getStreamId() : "(none)"), ": ", NetCommon.isPrintStackTraces() ? e : e.toString());
+							(stream != null ? stream.getStreamId() : "(none)"), ": ", NetCommon.PRINT_STACK_TRACES ? e : e.toString());
 				if(h2e.isStreamError() && (stream instanceof MessageStream)){
 					((MessageStream) stream).rst(h2e.getStatus());
 				}else{
@@ -141,7 +143,7 @@ public abstract class HTTP2Endpoint {
 					this.connection.close();
 				}
 			}else{
-				logger.warn(this.connection.getRemoteAddress(), " Error while processing frame: ", NetCommon.isPrintStackTraces() ? e : e.toString());
+				logger.warn(this.connection.getRemoteAddress(), " Error while processing frame: ", NetCommon.PRINT_STACK_TRACES ? e : e.toString());
 				this.getControlStream().sendGoaway(this.highestStreamId, HTTP2Constants.STATUS_INTERNAL_ERROR);
 				this.connection.close();
 			}

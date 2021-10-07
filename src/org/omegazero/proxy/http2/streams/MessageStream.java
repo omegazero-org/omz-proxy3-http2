@@ -221,7 +221,7 @@ public class MessageStream extends HTTP2Stream {
 	private boolean writeDataFrame(boolean eos, byte[] data) {
 		synchronized(this.windowSizeLock){
 			int frameFlags = eos ? FRAME_FLAG_ANY_END_STREAM : 0;
-			if(this.dataBacklog.size() == 0 && this.canAcceptFlowControlledData(data.length)){
+			if(super.connection.isWritable() && this.dataBacklog.size() == 0 && this.canAcceptFlowControlledData(data.length)){
 				this.writeFrame(FRAME_TYPE_DATA, frameFlags, data);
 				if(eos)
 					this.sentES();
@@ -423,7 +423,7 @@ public class MessageStream extends HTTP2Stream {
 	public void windowUpdate() {
 		synchronized(this.windowSizeLock){
 			QueuedDataFrame qf;
-			while((qf = this.dataBacklog.peekFirst()) != null && this.canAcceptFlowControlledData(qf.payload.length)){
+			while(super.connection.isWritable() && (qf = this.dataBacklog.peekFirst()) != null && this.canAcceptFlowControlledData(qf.payload.length)){
 				this.dataBacklog.removeFirst();
 				this.writeFrame(FRAME_TYPE_DATA, qf.flags, qf.payload);
 				if((qf.flags & FRAME_FLAG_ANY_END_STREAM) != 0)
@@ -440,7 +440,7 @@ public class MessageStream extends HTTP2Stream {
 	 * @param size The size of a flow-controlled frame payload
 	 * @return <code>true</code> if the receiver can receive the amount of data given
 	 */
-	public boolean canAcceptFlowControlledData(int size) {
+	protected boolean canAcceptFlowControlledData(int size) {
 		return Math.min(this.controlStream.getReceiverWindowSize(), this.receiverWindowSize) >= size;
 	}
 
