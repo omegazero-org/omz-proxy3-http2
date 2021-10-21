@@ -163,7 +163,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 
 	@Override
 	public void respondError(HTTPMessage request, int status, String title, String message, String... headers) {
-		if(request.getCorrespondingMessage() != null)
+		if(request.hasResponse())
 			return;
 		HTTPErrdoc errdoc = this.proxy.getErrdocForAccept(request.getHeader("accept"));
 		byte[] errdocData = errdoc.generate(status, title, message, request.getHeader("x-request-id"), super.connection.getApparentRemoteAddress().toString()).getBytes();
@@ -179,7 +179,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 	}
 
 	private void respondEx(HTTPMessage request, int status, byte[] data, String[] h1, String... hEx) {
-		if(request.getCorrespondingMessage() != null)
+		if(request.hasResponse())
 			return;
 		logger.debug(this.downstreamConnectionDbgstr, " Responding with status ", status);
 		HTTPMessage response = new HTTPMessage(status, "HTTP/2");
@@ -243,7 +243,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 		this.proxy.dispatchEvent(ProxyEvents.HTTP_REQUEST_PRE_LOG, super.connection, request);
 		if(!this.config.isDisableDefaultRequestLog())
 			logger.info(super.connection.getApparentRemoteAddress(), "/", HTTPCommon.shortenRequestId(request.getRequestId()), " - '", request.requestLine(), "'");
-		if(request.getCorrespondingMessage() != null) // received response (eg in event handler)
+		if(request.hasResponse())
 			return;
 
 		UpstreamServer userver = this.proxy.getUpstreamServer(request.getAuthority(), request.getPath());
@@ -255,7 +255,7 @@ public class HTTP2 extends HTTP2Endpoint implements HTTPEngine {
 		}
 
 		this.proxy.dispatchEvent(ProxyEvents.HTTP_REQUEST_PRE, super.connection, request, userver);
-		if(request.getCorrespondingMessage() != null)
+		if(request.hasResponse())
 			return;
 
 		final HTTP2Client client;
