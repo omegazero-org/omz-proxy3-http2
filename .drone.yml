@@ -1,0 +1,47 @@
+
+kind: pipeline
+name: java8
+
+platform:
+  arch: amd64
+
+steps:
+- name: prepare-dependencies
+  image: omz-ci-tools
+  pull: never
+  commands:
+  - artifact-dl-java maven/org.json:json:20211205
+  - artifact-dl-java omz/org.omegazero.common:common:release
+  - artifact-dl-java omz/org.omegazero.net:netlib:release
+  - artifact-dl-java omz/org.omegazero.proxy:omz-proxy:latest
+
+- name: prepare-source
+  image: omz-ci-tools
+  pull: never
+  commands:
+  - setversion src/plugin.cfg
+
+- name: build
+  # use ECJ because of bug in default JDK 8 compiler (JDK-8139836)
+  image: openjdk-ecj:4.14
+  pull: never
+  commands:
+  - mkdir bin
+  - ecj -verbose -d bin -cp json-20211205.jar:common-release.jar:netlib-release.jar:omz-proxy-latest.jar -8 src
+  - cp src/plugin.cfg bin
+  - cp src/org/omegazero/proxy/http2/hpack/hpack_* bin/org/omegazero/proxy/http2/hpack
+  - jar cf build.jar -C bin .
+  depends_on:
+  - prepare-dependencies
+  - prepare-source
+
+- name: publish
+  image: omz-ci-tools
+  pull: never
+  commands:
+  - artifact-push-java build.jar omz/org.omegazero.proxyplugin:http2
+  depends_on:
+  - build
+  environment:
+    OMZ_ARTIFACT_PUSH_TOKEN:
+      from_secret: artifact_push_token
