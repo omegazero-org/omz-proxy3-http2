@@ -68,6 +68,10 @@ public class HPackContext implements Serializable {
 	 */
 	public Map<String, String> decodeHeaderBlock(byte[] data) {
 		Map<String, String> headers = new HashMap<>();
+		// cookie headers are encoded specially in HTTP/2: instead of "cookie: c1=v1; c2=v2", each cookie is sent in its own header
+		// this converts individual cookie headers back to the first (old) format with a single header
+		StringBuilder cookieValues = new StringBuilder();
+
 		IntRef tmp = new IntRef();
 		for(int i = 0; i < data.length;){
 			if((data[i] & 0x80) != 0){ // indexed full header (6.1)
@@ -78,7 +82,10 @@ public class HPackContext implements Serializable {
 				if(e == null || e.value == null)
 					return null;
 				i += tmp.getAndReset() + 1;
-				headers.put(e.name, e.value);
+				if(!e.name.equals("cookie"))
+					headers.put(e.name, e.value);
+				else
+					cookieValues.append(';').append(' ').append(e.value);
 			}else if((data[i] & 0xe0) == 0x20){ // table size update (6.3)
 				int size = readInteger32(data, i, 5, tmp);
 				if(size < 0)
@@ -118,7 +125,10 @@ public class HPackContext implements Serializable {
 					return null;
 				String value = new String(valuedata, StandardCharsets.UTF_8);
 				i += tmp.getAndReset() + 1;
-				headers.put(name, value);
+				if(!name.equals("cookie"))
+					headers.put(name, value);
+				else
+					cookieValues.append(';').append(' ').append(value);
 				if(addToIndex){
 					TableEntry ne = new TableEntry(namelen, valuedata.length, name, value);
 					this.removeDecoderDynamicTableEntries(ne.getSize());
@@ -127,6 +137,8 @@ public class HPackContext implements Serializable {
 					this.session.addNeverIndex(name);
 			}
 		}
+		if(cookieValues.length() > 2)
+			headers.put("cookie", cookieValues.substring(2));
 		return headers;
 	}
 
