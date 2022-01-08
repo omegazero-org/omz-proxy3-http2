@@ -34,7 +34,7 @@ public abstract class HTTP2Endpoint {
 	private int frameBufferSize = 0;
 	private int frameExpectedSize = 0;
 
-	protected Map<Integer, HTTP2Stream> streams = new java.util.HashMap<>();
+	protected Map<Integer, HTTP2Stream> streams = new java.util.concurrent.ConcurrentHashMap<>();
 	protected Deque<MessageStream> closeWaitStreams = new java.util.LinkedList<>();
 	protected int highestStreamId = 0;
 
