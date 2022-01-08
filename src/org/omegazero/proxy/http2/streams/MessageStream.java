@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 
 import org.omegazero.common.logging.Logger;
 import org.omegazero.net.socket.SocketConnection;
+import org.omegazero.proxy.http.HTTPHeaderContainer;
 import org.omegazero.proxy.http.HTTPMessage;
 import org.omegazero.proxy.http.HTTPMessageData;
 import org.omegazero.proxy.http.HTTPMessageTrailers;
@@ -124,21 +125,19 @@ public class MessageStream extends HTTP2Stream {
 	 * @param trailers The trailers to send
 	 * @throws IllegalStateException If the stream is not in <code>STATE_OPEN</code> or <code>STATE_HALF_CLOSED</code>
 	 */
-	public synchronized void sendTrailers(HTTPMessageTrailers htrailers) {
+	public synchronized void sendTrailers(HTTPMessageTrailers trailers) {
 		if(this.state != STATE_OPEN && this.state != STATE_HALF_CLOSED)
 			throw new IllegalStateException("Stream is not expecting trailers");
 
-		java.util.Set<Map.Entry<String, String>> trailers = htrailers.getHeaderSet();
-		HPackContext.EncoderContext context = new HPackContext.EncoderContext(trailers.size());
-		for(Map.Entry<String, String> header : trailers){
+		HPackContext.EncoderContext context = new HPackContext.EncoderContext(trailers.headerNameCount());
+		for(Map.Entry<String, String> header : trailers.headers()){
 			this.hpack.encodeHeader(context, header.getKey().toLowerCase(), header.getValue());
 		}
 		this.writeHeaders(FRAME_TYPE_HEADERS, context, true);
 	}
 
 	private void writeMessage(int type, byte[] prependData, HTTPMessage message, boolean endStream) {
-		java.util.Set<Map.Entry<String, String>> headers = message.getHeaderSet();
-		HPackContext.EncoderContext context = new HPackContext.EncoderContext(headers.size(), prependData);
+		HPackContext.EncoderContext context = new HPackContext.EncoderContext(message.headerNameCount(), prependData);
 		if(message.isRequest()){
 			this.hpack.encodeHeader(context, ":method", message.getMethod());
 			this.hpack.encodeHeader(context, ":scheme", message.getScheme());
@@ -147,7 +146,7 @@ public class MessageStream extends HTTP2Stream {
 		}else{
 			this.hpack.encodeHeader(context, ":status", Integer.toString(message.getStatus()));
 		}
-		for(Map.Entry<String, String> header : headers){
+		for(Map.Entry<String, String> header : message.headers()){
 			this.hpack.encodeHeader(context, header.getKey().toLowerCase(), header.getValue());
 		}
 
@@ -346,7 +345,7 @@ public class MessageStream extends HTTP2Stream {
 		boolean request = this.state == STATE_OPEN || pushPromise;
 		if(endStream)
 			this.recvESnc(); // close() is called after events, but state change must be done before (bit of a mess i know)
-		Map<String, String> headers = this.hpack.decodeHeaderBlock(data);
+		HTTPHeaderContainer headers = this.hpack.decodeHeaderBlock(data);
 		if(headers == null)
 			throw new HTTP2ConnectionError(STATUS_COMPRESSION_ERROR);
 		if(this.receivedMessage == null){
@@ -357,23 +356,25 @@ public class MessageStream extends HTTP2Stream {
 				streamId = this.promisedStreamId;
 			HTTP2Message msg;
 			if(request){
-				String method = headers.remove(":method");
-				String scheme = headers.remove(":scheme");
-				String authority = headers.remove(":authority");
-				String path = headers.remove(":path");
+				String method = headers.extractHeader(":method");
+				String scheme = headers.extractHeader(":scheme");
+				String authority = headers.extractHeader(":authority");
+				String path = headers.extractHeader(":path");
 				if(authority == null)
-					authority = headers.get("host");
+					authority = headers.extractHeader("host");
+				else
+					headers.deleteHeader("host");
 				if(!HTTPValidator.validMethod(method) || !"https".equals(scheme) || !HTTPValidator.validAuthority(authority) || !HTTPValidator.validPath(path))
 					throw new HTTP2ConnectionError(STATUS_PROTOCOL_ERROR, true);
 				msg = new HTTP2Message(method, scheme, authority, path, "HTTP/2", headers, streamId);
 			}else{
-				int status = HTTPValidator.parseStatus(headers.remove(":status"));
+				int status = HTTPValidator.parseStatus(headers.extractHeader(":status"));
 				if(status < 0)
 					throw new HTTP2ConnectionError(STATUS_PROTOCOL_ERROR, true);
 				msg = new HTTP2Message(status, "HTTP/2", headers, streamId);
 			}
 			msg.setSize(data.length);
-			msg.setChunkedTransfer(!headers.containsKey("content-length"));
+			msg.setChunkedTransfer(!msg.headerExists("content-length"));
 
 			if(!pushPromise){
 				this.receivedMessage = msg;

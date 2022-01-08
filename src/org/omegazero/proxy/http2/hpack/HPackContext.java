@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Set;
 
 import org.omegazero.common.util.ArrayUtil;
+import org.omegazero.proxy.http.HTTPHeaderContainer;
 
 /**
  * A <code>HPackContext</code> contains one encoder and decoder for use on a HTTP/2 connection.<br>
@@ -64,12 +65,12 @@ public class HPackContext implements Serializable {
 	 * Decodes the given full header block data according to <i>RFC 7541</i>.
 	 * 
 	 * @param data The full header data
-	 * @return A map of header name-value pairs, or <code>null</code> if a decoding error occurred
+	 * @return A {@link HTTPHeaderContainer} containing the decoded header data, or <code>null</code> if a decoding error occurred
 	 */
-	public Map<String, String> decodeHeaderBlock(byte[] data) {
-		Map<String, String> headers = new HashMap<>();
+	public HTTPHeaderContainer decodeHeaderBlock(byte[] data) {
+		HTTPHeaderContainer headers = new HTTPHeaderContainer();
 		// cookie headers are encoded specially in HTTP/2: instead of "cookie: c1=v1; c2=v2", each cookie is sent in its own header
-		// this converts individual cookie headers back to the first (old) format with a single header
+		// individual cookie headers are converted back to the first (old) format with a single header (as recommended by rfc7540, 8.1.2.5)
 		StringBuilder cookieValues = new StringBuilder();
 
 		IntRef tmp = new IntRef();
@@ -83,7 +84,7 @@ public class HPackContext implements Serializable {
 					return null;
 				i += tmp.getAndReset() + 1;
 				if(!e.name.equals("cookie"))
-					headers.put(e.name, e.value);
+					headers.addHeader(e.name, e.value);
 				else
 					cookieValues.append(';').append(' ').append(e.value);
 			}else if((data[i] & 0xe0) == 0x20){ // table size update (6.3)
@@ -126,7 +127,7 @@ public class HPackContext implements Serializable {
 				String value = new String(valuedata, StandardCharsets.UTF_8);
 				i += tmp.getAndReset() + 1;
 				if(!name.equals("cookie"))
-					headers.put(name, value);
+					headers.addHeader(name, value);
 				else
 					cookieValues.append(';').append(' ').append(value);
 				if(addToIndex){
@@ -138,7 +139,7 @@ public class HPackContext implements Serializable {
 			}
 		}
 		if(cookieValues.length() > 2)
-			headers.put("cookie", cookieValues.substring(2));
+			headers.addHeader("cookie", cookieValues.substring(2));
 		return headers;
 	}
 
@@ -486,9 +487,9 @@ public class HPackContext implements Serializable {
 	 */
 	public static class EncoderContext {
 
-		protected byte[] buf;
-		protected int buflen = 0;
-		protected boolean wroteSizeUpdate = false;
+		byte[] buf;
+		int buflen = 0;
+		boolean wroteSizeUpdate = false;
 
 		public EncoderContext() {
 			this(4, null);
@@ -547,6 +548,7 @@ public class HPackContext implements Serializable {
 			return val;
 		}
 	}
+
 
 	private static class TableEntry implements Serializable {
 
